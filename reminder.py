@@ -14,10 +14,6 @@ REMINDER_CHANNEL_NAME = "reminder-announcements"
 TOKEN = os.getenv("DISCORD_TOKEN")
 OWNER_ID = os.getenv("OWNER_ID")
 
-print()
-print(f"TOKEN: {TOKEN}")
-print()
-
 intents = discord.Intents.default()
 bot = commands.Bot(command_prefix="!", intents=intents)
 scheduler = AsyncIOScheduler()
@@ -90,4 +86,30 @@ async def remind_weekly(interaction: discord.Interaction, weekday: str, hour: in
     scheduler.add_job(send_reminder, CronTrigger(day_of_week=days_map[weekday], hour=hour, minute=minute))
     await interaction.response.send_message(f"Weekly reminder set for every {weekday.title()} at {hour:02d}:{minute:02d} in #{REMINDER_CHANNEL_NAME}.")
 
-bot.run(TOKEN)
+# Specific Date Reminder
+@bot.tree.command(name="remind_on_date", description="Set a reminder for a specific date")
+@app_commands.describe(year="Year (e.g. 2025)", month="Month (1-12)", day="Day of the month (1-31)", hour="Hour (0-23, default=9)", minute="Minute (0-59, default=0)", message="Reminder message")
+async def remind_on_date(interaction: discord.Interaction, year: int, month: int, day: int, hour: int = 9, minute: int = 0, message: str = "Reminder!"):
+    try:
+        remind_time = datetime.datetime(year, month, day, hour, minute)
+        now = datetime.datetime.now()
+        if remind_time <= now:
+            await interaction.response.send_message("The specified time is in the past. Please pick a future date/time.")
+            return
+    except ValueError as e:
+        await interaction.response.send_message(f"Invalid date: {e}")
+        return
+
+    async def send_reminder():
+        channel = get_reminder_channel(interaction.guild)
+        if channel:
+            await channel.send(f"<@{interaction.user.id}> Reminder for {remind_time.strftime('%B %d, %Y %H:%M')}: {message}")
+        else:
+            await interaction.user.send(f"Reminder for {remind_time.strftime('%B %d, %Y %H:%M')}: {message}")
+
+    scheduler.add_job(send_reminder, "date", run_date=remind_time)
+    await interaction.response.send_message(f"Reminder scheduled for {remind_time.strftime('%B %d, %Y %H:%M')} in #{REMINDER_CHANNEL_NAME}.")
+
+
+if __name__ == "__main__":
+    bot.run(TOKEN)
