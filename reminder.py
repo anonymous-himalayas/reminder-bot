@@ -33,6 +33,34 @@ def get_reminder_channel(guild: discord.Guild):
     channel = discord.utils.get(guild.text_channels, name=REMINDER_CHANNEL_NAME)
     return channel
 
+
+reminders = {}
+
+def add_reminder(user_id: int, job_id: str, message: str, remind_time: datetime.datetime, rtype: str):
+    if user_id not in reminders:
+        reminders[user_id] = []
+    reminders[user_id].append({
+        "job_id": job_id,
+        "message": message,
+        "time": remind_time,
+        "type": rtype
+    })
+
+@bot.tree.command(name="view_reminders", description="View your active reminders")
+async def view_reminders(interaction: discord.Interaction):
+    user_id = interaction.user.id
+    if user_id not in reminders or len(reminders[user_id]) == 0:
+        await interaction.response.send_message("📭 You don’t have any active reminders.")
+        return
+
+    lines = []
+    for r in reminders[user_id]:
+        when = r["time"].strftime("%B %d, %Y %H:%M")
+        lines.append(f"• **{r['type']}** — {r['message']} (⏰ {when})")
+
+    response = "\n".join(lines)
+    await interaction.response.send_message(f"📝 Your reminders:\n{response}")
+
 # Single Reminder
 @bot.tree.command(name="remindme", description="Set a single reminder")
 @app_commands.describe(time_in_minutes="How many minutes from now?", message="Reminder message")
