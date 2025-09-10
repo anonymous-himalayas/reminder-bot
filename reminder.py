@@ -50,16 +50,16 @@ def add_reminder(user_id: int, job_id: str, message: str, remind_time: datetime.
 async def view_reminders(interaction: discord.Interaction):
     user_id = interaction.user.id
     if user_id not in reminders or len(reminders[user_id]) == 0:
-        await interaction.response.send_message("📭 You don’t have any active reminders.")
+        await interaction.response.send_message("You don't have any active reminders.")
         return
 
     lines = []
     for r in reminders[user_id]:
         when = r["time"].strftime("%B %d, %Y %H:%M")
-        lines.append(f"• **{r['type']}** — {r['message']} (⏰ {when})")
+        lines.append(f"• **{r['type']}** — {r['message']} ({when})")
 
     response = "\n".join(lines)
-    await interaction.response.send_message(f"📝 Your reminders:\n{response}")
+    await interaction.response.send_message(f"Your reminders:\n{response}")
 
 # Single Reminder
 @bot.tree.command(name="remindme", description="Set a single reminder")
