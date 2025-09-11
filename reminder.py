@@ -21,7 +21,8 @@ scheduler = AsyncIOScheduler()
 @bot.event
 async def on_ready():
     print(f"Logged in as {bot.user}")
-    scheduler.start()
+    if not scheduler.running:
+        scheduler.start()
     try:
         synced = await bot.tree.sync()
         print(f"Synced {len(synced)} slash commands.")
