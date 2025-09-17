@@ -76,6 +76,7 @@ async def remindme(interaction: discord.Interaction, time_in_minutes: int, messa
             await interaction.user.send(f"Reminder (no channel found): {message}")
 
     scheduler.add_job(send_reminder, "date", run_date=remind_time)
+    add_reminder(interaction.user.id, f"single_{remind_time.timestamp()}", message, remind_time, "Single")
     await interaction.response.send_message(f"Reminder set for {time_in_minutes} minutes from now in #{REMINDER_CHANNEL_NAME}.")
 
 # Recurring Every X Days
@@ -90,7 +91,28 @@ async def remind_every_x_days(interaction: discord.Interaction, days: int, messa
             await interaction.user.send(f"Reminder (every {days} days, no channel found): {message}")
 
     scheduler.add_job(send_reminder, IntervalTrigger(days=days))
+    add_reminder(interaction.user.id, f"recurring_{days}d", message, datetime.datetime.now() + datetime.timedelta(days=days), f"Every {days} days")
     await interaction.response.send_message(f"Recurring reminder set every {days} days in #{REMINDER_CHANNEL_NAME}.")
+
+# Recurring Everyday at Specific Time
+@bot.tree.command(name="remind_daily", description="Set a recurring reminder every day at a specific time")
+@app_commands.describe(hour="Hour in 24-hour format (0-23)", minute="Minute (0-59)", message="Reminder message")
+async def remind_daily(interaction: discord.Interaction, hour: int, minute: int, message: str):
+    async def send_reminder():
+        channel = get_reminder_channel(interaction.guild)
+        if channel:
+            await channel.send(f"<@{interaction.user.id}> Daily Reminder at {hour:02d}:{minute:02d} → {message}")
+        else:
+            await interaction.user.send(f"Daily Reminder at {hour:02d}:{minute:02d} → {message}")
+
+    scheduler.add_job(
+        send_reminder,
+        CronTrigger(hour=hour, minute=minute)
+    )
+    add_reminder(interaction.user.id, f"daily_{hour:02d}{minute:02d}", message, datetime.datetime.now().replace(hour=hour, minute=minute, second=0, microsecond=0) + datetime.timedelta(days=1), "Daily")
+    await interaction.response.send_message(
+        f"Daily reminder set for {hour:02d}:{minute:02d} in #{REMINDER_CHANNEL_NAME}."
+    )
 
 # Recurring Weekly 
 @bot.tree.command(name="remind_weekly", description="Set a weekly reminder")
@@ -113,6 +135,7 @@ async def remind_weekly(interaction: discord.Interaction, weekday: str, hour: in
             await interaction.user.send(f"Weekly Reminder (no channel found): {message}")
 
     scheduler.add_job(send_reminder, CronTrigger(day_of_week=days_map[weekday], hour=hour, minute=minute))
+    add_reminder(interaction.user.id, f"weekly_{days_map[weekday]}_{hour:02d}{minute:02d}", message, datetime.datetime.now(), f"Weekly on {weekday.title()}")
     await interaction.response.send_message(f"Weekly reminder set for every {weekday.title()} at {hour:02d}:{minute:02d} in #{REMINDER_CHANNEL_NAME}.")
 
 # Specific Date Reminder
@@ -137,6 +160,7 @@ async def remind_on_date(interaction: discord.Interaction, year: int, month: int
             await interaction.user.send(f"Reminder for {remind_time.strftime('%B %d, %Y %H:%M')}: {message}")
 
     scheduler.add_job(send_reminder, "date", run_date=remind_time)
+    add_reminder(interaction.user.id, f"date_{remind_time.timestamp()}", message, remind_time, "Specific Date")
     await interaction.response.send_message(f"Reminder scheduled for {remind_time.strftime('%B %d, %Y %H:%M')} in #{REMINDER_CHANNEL_NAME}.")
 
 
