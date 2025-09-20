@@ -47,6 +47,12 @@ def add_reminder(user_id: int, job_id: str, message: str, remind_time: datetime.
         "type": rtype
     })
 
+def remove_reminder(user_id: int, job_id: str):
+    if user_id in reminders:
+        reminders[user_id] = [r for r in reminders[user_id] if r["job_id"] != job_id]
+        if not reminders[user_id]:
+            del reminders[user_id]
+
 @bot.tree.command(name="view_reminders", description="View your active reminders")
 async def view_reminders(interaction: discord.Interaction):
     user_id = interaction.user.id
@@ -68,12 +74,14 @@ async def view_reminders(interaction: discord.Interaction):
 async def remindme(interaction: discord.Interaction, time_in_minutes: int, message: str):
     remind_time = datetime.datetime.now() + datetime.timedelta(minutes=time_in_minutes)
 
-    async def send_reminder():
+    async def send_reminder(user_id: int, job_id: str, message: str, interaction: discord.Interaction):
         channel = get_reminder_channel(interaction.guild)
         if channel:
-            await channel.send(f"<@{interaction.user.id}> Reminder: {message}")
+            await channel.send(f"<@{user_id}> Reminder: {message}")
         else:
             await interaction.user.send(f"Reminder (no channel found): {message}")
+
+        remove_reminder(user_id, job_id)
 
     scheduler.add_job(send_reminder, "date", run_date=remind_time)
     add_reminder(interaction.user.id, f"single_{remind_time.timestamp()}", message, remind_time, "Single")
@@ -83,33 +91,61 @@ async def remindme(interaction: discord.Interaction, time_in_minutes: int, messa
 @bot.tree.command(name="remind_every_x_days", description="Set a recurring reminder every X days")
 @app_commands.describe(days="How often in days?", message="Reminder message")
 async def remind_every_x_days(interaction: discord.Interaction, days: int, message: str):
-    async def send_reminder():
+    async def send_reminder(user_id: int, job_id: str, message: str, interaction: discord.Interaction):
+        channel = get_reminder_channel(interaction.guild)
         channel = get_reminder_channel(interaction.guild)
         if channel:
             await channel.send(f"<@{interaction.user.id}> Reminder (every {days} days): {message}")
         else:
             await interaction.user.send(f"Reminder (every {days} days, no channel found): {message}")
+        
+        remove_reminder(user_id, job_id)
 
     scheduler.add_job(send_reminder, IntervalTrigger(days=days))
     add_reminder(interaction.user.id, f"recurring_{days}d", message, datetime.datetime.now() + datetime.timedelta(days=days), f"Every {days} days")
     await interaction.response.send_message(f"Recurring reminder set every {days} days in #{REMINDER_CHANNEL_NAME}.")
 
-# Recurring Everyday at Specific Time
+def update_reminder_date(user_id: int, job_id: str, next_time: datetime.datetime):
+    if user_id in reminders:
+        for r in reminders[user_id]:
+            if r["job_id"] == job_id:
+                r["time"] = next_time
+                break
+
 @bot.tree.command(name="remind_daily", description="Set a recurring reminder every day at a specific time")
 @app_commands.describe(hour="Hour in 24-hour format (0-23)", minute="Minute (0-59)", message="Reminder message")
 async def remind_daily(interaction: discord.Interaction, hour: int, minute: int, message: str):
-    async def send_reminder():
+    job_id = f"daily_{hour:02d}{minute:02d}"
+
+    async def send_reminder(user_id: int, job_id: str, message: str, interaction: discord.Interaction):
         channel = get_reminder_channel(interaction.guild)
         if channel:
-            await channel.send(f"<@{interaction.user.id}> Daily Reminder at {hour:02d}:{minute:02d} → {message}")
+            await channel.send(f"<@{user_id}> Daily Reminder at {hour:02d}:{minute:02d} → {message}")
         else:
             await interaction.user.send(f"Daily Reminder at {hour:02d}:{minute:02d} → {message}")
 
+        # --- update stored reminder date for tomorrow ---
+        next_time = datetime.datetime.now().replace(
+            hour=hour, minute=minute, second=0, microsecond=0
+        ) + datetime.timedelta(days=1)
+
+        update_reminder_date(user_id, job_id, next_time)
+
+    # Add APScheduler job (fires daily at that time)
     scheduler.add_job(
         send_reminder,
-        CronTrigger(hour=hour, minute=minute)
+        CronTrigger(hour=hour, minute=minute),
+        id=job_id,
+        replace_existing=True
     )
-    add_reminder(interaction.user.id, f"daily_{hour:02d}{minute:02d}", message, datetime.datetime.now().replace(hour=hour, minute=minute, second=0, microsecond=0) + datetime.timedelta(days=1), "Daily")
+
+    # Store initial reminder (tomorrow’s date)
+    next_time = datetime.datetime.now().replace(
+        hour=hour, minute=minute, second=0, microsecond=0
+    ) + datetime.timedelta(days=1)
+
+    add_reminder(interaction.user.id, job_id, message, next_time, "Daily")
+
     await interaction.response.send_message(
         f"Daily reminder set for {hour:02d}:{minute:02d} in #{REMINDER_CHANNEL_NAME}."
     )
@@ -127,12 +163,13 @@ async def remind_weekly(interaction: discord.Interaction, weekday: str, hour: in
         await interaction.response.send_message("Invalid weekday. Try: Monday, Tuesday, etc.")
         return
 
-    async def send_reminder():
+    async def send_reminder(user_id: int, job_id: str, message: str, interaction: discord.Interaction):
         channel = get_reminder_channel(interaction.guild)
         if channel:
-            await channel.send(f"<@{interaction.user.id}> Weekly Reminder ({weekday.title()} at {hour:02d}:{minute:02d}): {message}")
+            await channel.send(f"<@{user_id}> Weekly Reminder ({weekday.title()} at {hour:02d}:{minute:02d}): {message}")
         else:
             await interaction.user.send(f"Weekly Reminder (no channel found): {message}")
+        
 
     scheduler.add_job(send_reminder, CronTrigger(day_of_week=days_map[weekday], hour=hour, minute=minute))
     add_reminder(interaction.user.id, f"weekly_{days_map[weekday]}_{hour:02d}{minute:02d}", message, datetime.datetime.now(), f"Weekly on {weekday.title()}")
